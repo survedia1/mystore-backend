@@ -6,6 +6,26 @@
         body { font-family: sans-serif; padding: 20px; max-width: 500px; margin: auto; }
         input, button, select { display: block; margin-bottom: 10px; padding: 10px; width: 100%; box-sizing: border-box; }
         #status { font-weight: bold; }
+
+        /* ⬇️⬇️ ستايل شريط التحميل ⬇️⬇️ */
+        #progress-container {
+            width: 100%;
+            background-color: #f3f3f3;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+            margin-bottom: 10px;
+            display: none; /* إخفاؤه في البداية */
+        }
+        #progress-bar {
+            width: 0%;
+            height: 30px;
+            background-color: #4CAF50;
+            text-align: center;
+            line-height: 30px;
+            color: white;
+            border-radius: 5px;
+        }
+        /* ⬆️⬆️ نهاية ستايل شريط التحميل ⬆️⬆️ */
     </style>
 </head>
 <body>
@@ -27,40 +47,84 @@
         <button type="submit">نشر التحديث</button>
     </form>
     
+    <div id="progress-container">
+        <div id="progress-bar">0%</div>
+    </div>
+    
     <p id="status">الحالة: في انتظار الرفع...</p>
 
-    <script>
+    <script type="module">
+        // استيراد الدالة 'upload' من CDN
+        import { upload } from 'https://unpkg.com/@vercel/blob@0.23.3/dist/client.js';
+
         const form = document.getElementById('uploadForm');
         const statusEl = document.getElementById('status');
+        const progressContainer = document.getElementById('progress-container');
+        const progressBar = document.getElementById('progress-bar');
+        const submitButton = form.querySelector('button');
 
         form.addEventListener('submit', async (e) => {
             e.preventDefault();
-            statusEl.innerText = "جاري رفع الملف... قد يستغرق هذا وقتاً...";
-            statusEl.style.color = "blue";
             
-            // استخدام FormData لإرسال الملفات والبيانات
-            const formData = new FormData(form);
+            const file = document.getElementById('apkFile').files[0];
+            const vCode = document.getElementById('versionCode').value;
+            const vName = document.getElementById('versionName').value;
+            const secret = document.getElementById('secret').value;
+
+            if (!file) {
+                statusEl.innerText = "يرجى اختيار ملف أولاً";
+                return;
+            }
+
+            statusEl.innerText = "جاري بدء الرفع...";
+            statusEl.style.color = "blue";
+            progressContainer.style.display = 'block';
+            progressBar.style.width = '0%';
+            progressBar.innerText = '0%';
+            submitButton.disabled = true; // تعطيل الزر أثناء الرفع
 
             try {
-                // نرسل البيانات إلى الـ API الخاص بنا
-                const response = await fetch('/api/upload', {
-                    method: 'POST',
-                    body: formData, // لا نحتاج لـ headers, المتصفح يضعها تلقائياً
-                });
+                // 2. بدء الرفع مباشرة إلى Blob
+                const blob = await upload(
+                    file.name, // اسم الملف
+                    file,      // الملف نفسه
+                    {
+                        access: 'public',
+                        // رابط الـ API الذي سيعطي الإذن
+                        handleUploadUrl: '/api/upload', 
+                        
+                        // 3. إرسال البيانات الإضافية (كلمة المرور، الإصدار)
+                        // الـ API سيستقبلها في دالة 'beforeUpload'
+                        body: JSON.stringify({
+                            versionCode: vCode,
+                            versionName: vName,
+                            secret: secret,
+                        }),
+                        
+                        // 4. هذا هو مؤشر التحميل الذي طلبته
+                        onUploadProgress: (progress) => {
+                            const percent = Math.round(progress);
+                            progressBar.style.width = percent + '%';
+                            progressBar.innerText = percent + '%';
+                            statusEl.innerText = `جاري الرفع... ${percent}%`;
+                        },
+                    }
+                );
 
-                const result = await response.json();
+                // تم الرفع بنجاح
+                statusEl.innerText = `تم النشر بنجاح! الإصدار: ${vName}`;
+                statusEl.style.color = "green";
+                form.reset();
 
-                if (response.ok) {
-                    statusEl.innerText = `تم النشر بنجاح! الإصدار: ${result.versionName}`;
-                    statusEl.style.color = "green";
-                    form.reset();
-                } else {
-                    throw new Error(result.error || 'فشل الرفع');
-                }
             } catch (error) {
                 console.error(error);
                 statusEl.innerText = "حدث خطأ: " + error.message;
                 statusEl.style.color = "red";
+            } finally {
+                // إعادة تفعيل الزر وإخفاء الشريط عند الانتهاء أو الفشل
+                submitButton.disabled = false;
+                // لا تخفي الشريط عند النجاح ليرى المستخدم النتيجة
+                // progressContainer.style.display = 'none'; 
             }
         });
     </script>
